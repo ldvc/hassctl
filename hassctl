@@ -25,11 +25,11 @@ usage() {
 }
 
 check_config() {
-  check="$($hass --script check_config "$@")"
+  check="$($hass --script check_config -c /home/homeassistant/.homeassistant "$@")"
   [[ ! "$check" =~ "Failed config" ]]
 }
 
-hass="$(which hass)"
+hass=/srv/homeassistant/homeassistant_venv/bin/hass
 hass_service="home-assistant*"
 
 if [ "$1" = "log" ]; then
