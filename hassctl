@@ -1,4 +1,16 @@
 #!/bin/bash
+#
+# Wrapper for managing HomeAssistant instance
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# uncomment for debugging
+#set -x
+
+err() {
+  echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')]: $@" >&2
+}
 
 update() {
   sudo curl -s -S -o /usr/local/bin/hassctl https://raw.githubusercontent.com/dale3h/hassctl/master/hassctl && sudo chmod +x /usr/local/bin/hassctl
@@ -19,23 +31,63 @@ update() {
   exit 0
 }
 
+check_aio() {
+
+  # https://home-assistant.io/getting-started/installation-raspberry-pi-all-in-one/
+
+  local venv_path
+
+  # before Dec. 16
+  if [[ `id -u hass` ]] ; then
+    venv_path="/srv/hass/hass_venv"
+    ha_user="hass"
+  elif [[ `id -u homeassistant` ]] ; then
+    venv_path="/srv/homeassistant/homeassistant_venv"
+    ha_user="homeassistant"
+  else
+    exit 0
+  fi
+
+  venv_cur=${VIRTUAL_ENV:-}
+
+  if [[ -d $venv_path && $venv_cur != $venv_path ]] ; then
+    msg="Raspberry Pi All-In-One Installer detected. Please run: 'source $venv_path/bin/activate' in order to load virtualenv."
+    err $msg
+    exit 1
+  elif [[ $USER = $ha_user ]] ; then
+    run_as_ha_user=true
+  fi
+}
+
 usage() {
   echo "usage: $(basename $0) <start|stop|restart|kill|log|error|config|update>"
   exit 1
 }
 
-hass_service="home-assistant*"
+ha_user=$USER
+run_as_ha_user=false
+check_aio
 
-if [ "$1" = "log" ]; then
+hass_service="home-assistant*"
+hass_bin=$(which hass)
+action=${1:-}
+
+
+if [ "$action" = "log" ]; then
   clear && sudo journalctl ${@:2} -u "$hass_service" | grep --color=always -iP '.*(error|errno|warning|exception|failure|failed|warn|except|fail).*|$'
-elif [ "$1" = "error" ]; then
+elif [ "$action" = "error" ]; then
   clear && sudo journalctl ${@:2} --no-pager -f -u "$hass_service" | grep --color=always -iP '^--.*--$|^(?!.*Current job from).*(error|errno|warning|exception|failure|failed|warn|except|fail).*'
-elif [ "$1" = "kill" ]; then
+elif [ "$action" = "kill" ]; then
   ps aux | grep 'python' | grep 'hass' | grep -vE 'grep' | awk '{print $2}' | xargs kill -9
-elif [ "$1" = "config" ]; then
-  $(which hass) --script check_config
-elif [ "$1" = "update" ]; then
+elif [ "$action" = "config" ]; then
+  if [ "$run_as_ha_user" = true ] ; then
+    $hass_bin --script check_config
+  else
+    err "Please re-run as '$ha_user' with 'sudo su -s /bin/bash $ha_user' in order to use <$action>."
+  fi
+elif [ "$action" = "update" ]; then
   update
 else
-  sudo systemctl $@ "$hass_service"
+  #sudo systemctl $@ "$hass_service"
+  usage
 fi
